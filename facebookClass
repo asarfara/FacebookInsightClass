@@ -1,0 +1,221 @@
+<?php
+class facebookClass
+{
+    private $fb;
+    private $appId;
+    private $appSecret;
+
+    public function __construct()
+    {
+        require_once 'facebook.php';
+        return null;
+    }
+
+    /**
+     * Initiate Facebook Object
+     */
+    public function setFacebookObj($appId, $appSecret)
+    {
+        $this->appId = $appId;
+        $this->appSecret = $appSecret;
+
+        $this->fb = new Facebook(array(
+            'appId' => $this->appId,
+            'secret' => $this->appSecret,
+            'cookie' => true,
+        ));
+    }
+
+    /**
+     * Total Number Of Page Fans & Talking About
+     */
+    public function getPageFans($idOfPage)
+    {
+        $fb = $this->fb;
+        $fanCount = $fb->api($idOfPage . '/?fields=likes,talking_about_count');
+        return $fanCount;
+    }
+
+
+
+    /**
+     * Total Number Of Page Fans Based On A Week
+     */
+    public function getPageFansCurrentWeek($idOfPage)
+    {
+        $totalLikesCurrentWeek = 0;
+        $oneDayBack = 0;
+
+        $this->getUser();
+
+        $fb = $this->fb;
+
+        $currentUnixTime = strtotime(date('Y-m-d', strtotime('-7 days')));
+
+        $fanCountCurrentWeek = $fb->api(
+            $idOfPage . '/insights/page_fan_adds/?since=' . $currentUnixTime
+        );
+
+        $tempVariable = $fanCountCurrentWeek["data"][0]["values"];
+
+        for ($i = 0; $i < sizeof($tempVariable); $i++) {
+            $totalLikesCurrentWeek = $tempVariable[$i]["value"] + $totalLikesCurrentWeek;
+        }
+
+        return $totalLikesCurrentWeek;
+    }
+
+    /**
+     * Get User Authentication
+     */
+    private function getUser()
+    {
+        $fb = $this->fb;
+        //Get the FB UID of the currently logged in user
+        $user = $fb->getUser();
+
+        //if the user has already allowed the application, you'll be able to get his/her FB UID
+        if ($user) {
+            //do stuff when already logged in
+        } else {
+            //if not, let's redirect to the ALLOW page so we can get access
+            //Create a login URL using the Facebook library's getLoginUrl() method
+            $login_url_params = array(
+                'scope' => 'manage_pages',
+                'fbconnect' => 1,
+                'redirect_uri' => 'http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']
+            );
+            $login_url = $fb->getLoginUrl($login_url_params);
+
+            //redirect to the login URL on facebook
+            echo '<script>
+                    window.location.href = "' . $login_url . '";
+                </script>';
+            //header("Location: {$login_url}");
+            exit();
+        }
+    }
+
+
+    public function getEngagedUsersOnPageCurrentMonth($idOfPage)
+    {
+        $this->getUser();
+
+        $fb = $this->fb;
+
+        $engagedUsersCurrentMonth = $fb->api(
+            $idOfPage . '/insights/page_story_adds_unique/days_28'
+        );
+
+        $tempVariable = end($engagedUsersCurrentMonth["data"][0]["values"]);
+
+        $totalEnagagedUsersThisMonth = $tempVariable["value"];
+
+        return $totalEnagagedUsersThisMonth;
+    }
+
+
+    public function getExternalReferrer($idOfPage)
+    {
+        $this->getUser();
+
+        $fb = $this->fb;
+
+        $currentUnixTime = strtotime(date('Y-m-d', strtotime('-30 days')));
+
+        $engagedUsersCurrentMonth = $fb->api(
+            $idOfPage . '/insights/page_views_external_referrals/day?since=' . $currentUnixTime
+        );
+
+        $allData = $engagedUsersCurrentMonth["data"];
+        $allValuesIndex = $allData[0]["values"];
+        $allValuesInsideData = array();
+
+        for ($i = 0; $i < sizeof($allValuesIndex); $i++) {
+            $allValuesInsideData[$i] = array('values' => $allValuesIndex[$i]["value"], 'date' => $allValuesIndex[$i]["end_time"]);
+        }
+
+        /* /////Use this on index page - it fetches links and its values/////
+        for ($i = 0; $i < sizeof($allExternalLink); $i++) {
+            echo 'Date: ' . $allExternalLink[$i]['date'] . '<br />';
+
+            foreach ($allExternalLink[$i]['values'] as $key => $val)
+            {
+                echo 'Key: ' . $key . ' Val: ' . $val . '<br />';
+            }
+        }
+        */
+
+        return $allValuesInsideData;
+    }
+
+    //Batch Request Method
+    public function getTabVisits($idOfPage)
+    {
+        $this->getUser();
+
+        $fb = $this->fb;
+
+        $currentUnixTime = strtotime(date('Y-m-d', strtotime('-30 days')));
+
+        //$tabVisit = $fb->api(
+        //    $idOfPage . '/insights/page_tab_views_login_top_unique/day?since=' . $currentUnixTime
+        //);
+
+        $tabVisit =
+            $fb->api(
+                '?batch=['.urlencode('{"method":"GET","relative_url":"/' . $idOfPage . '/insights/page_tab_views_login_top_unique/day?since=' . $currentUnixTime . '"}').']'
+            ,'post',array('access_token' => $fb->getAccessToken())
+            );
+
+
+        $jsonToArray = json_decode($tabVisit[0]["body"]);
+
+        $allData = $jsonToArray->data;
+        $allValuesIndex = $allData[0]->values;
+        $allValuesInsideData = array();
+
+        for ($i = 0; $i < sizeof($allValuesIndex); $i++) {
+            $allValuesInsideData[$i] = array('values' => $allValuesIndex[$i]->value, 'date' => $allValuesIndex[$i]->end_time);
+        }
+
+/*
+        ////this fetches all the tabs and its visitor number//////
+        for ($i = 0; $i < sizeof($allValuesInsideData); $i++) {
+            echo 'Date: ' . $allValuesInsideData[$i]->date . '<br />';
+
+            foreach ($allValuesInsideData[$i]['values'] as $key => $val) {
+                if (substr($key, 0, 3) === 'app')
+                {
+                    echo 'Key: ' . $key . ' Val: ' . $val . '<br />';
+                }
+            }
+        }
+*/
+
+        //var_dump($allValuesInsideData);
+        return $allValuesInsideData;
+
+    }
+
+    public function getTabName($tabId)
+    {
+        $this->getUser();
+
+        $fb = $this->fb;
+
+        $tabDetails =
+            $fb->api(
+                '?batch=['.urlencode('{"method":"GET","relative_url":"/' . $tabId . '?fields=name"}').']'
+                ,'post'
+            );
+
+        $jsonToArray = json_decode($tabDetails[0]["body"]);
+
+        //var_dump($jsonToArray->name);
+        return $jsonToArray->name;
+
+
+    }
+
+}
